@@ -249,6 +249,24 @@ tr:last-child td{border-bottom:none}
 .update-file:hover{background:var(--bg)}
 
 @media(max-width:900px){:root{--sidebar-w:190px}.stats-row{grid-template-columns:repeat(2,1fr)}.detail-layout{grid-template-columns:1fr}}
+
+/* ── ESTIMATE EDITOR (FULL-SCREEN) ──────────────────────────── */
+#page-estimate-editor{position:fixed;inset:0;z-index:60;background:var(--bg);display:none;flex-direction:column;overflow:hidden}
+#page-estimate-editor.active{display:flex!important}
+.ee-topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 18px;height:52px;display:flex;align-items:center;gap:10px;flex-shrink:0;box-shadow:var(--shadow)}
+.ee-split{display:grid;grid-template-columns:1fr 1fr;flex:1;min-height:0;overflow:hidden}
+.ee-left{overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:11px;background:var(--bg)}
+.ee-right{background:#E8E6E0;overflow-y:auto;padding:22px 18px;border-left:1px solid var(--border2)}
+.ee-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:13px 15px;box-shadow:var(--shadow)}
+.ee-card-title{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:9px}
+.ee-li-col-hd{display:grid;grid-template-columns:14px 1fr 88px 46px 78px 72px 24px;gap:5px;padding:0 0 4px;font-size:9.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px}
+.ee-li-item-row{display:grid;grid-template-columns:1fr 88px 46px 78px 72px 24px;gap:5px;align-items:start}
+.ee-li-section-row{display:flex;align-items:center;gap:6px;padding:6px 8px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:var(--radius-sm)}
+.ee-li-row-wrap{display:flex;gap:5px;align-items:start;margin-bottom:5px;transition:opacity .15s}
+.ee-li-row-wrap.dragging{opacity:.4}
+.ee-li-row-wrap.drag-over{outline:2px solid var(--accent);outline-offset:1px;border-radius:var(--radius-sm)}
+.ee-drag-handle{color:var(--text3);cursor:grab;user-select:none;padding:2px;font-size:13px;line-height:1;margin-top:7px;flex-shrink:0}
+.ee-pdf-paper{background:white;border-radius:8px;box-shadow:0 2px 20px rgba(0,0,0,.15),0 0 0 1px rgba(0,0,0,.05);padding:36px 40px;max-width:640px;margin:0 auto;font-family:'DM Sans',sans-serif;font-size:12px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -427,6 +445,68 @@ tr:last-child td{border-bottom:none}
       </div>
       <div style="margin-bottom:12px"><input class="fi" id="estimates-search" placeholder="🔍  Search estimates..." oninput="renderEstimates()" style="max-width:320px"></div>
       <div class="card"><table><thead><tr><th>Estimate #</th><th>Client</th><th>Project</th><th>Date</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody id="est-tbody"></tbody></table></div>
+    </div>
+
+    <!-- ESTIMATE EDITOR (FULL-SCREEN OVERLAY) -->
+    <div class="page" id="page-estimate-editor">
+      <div class="ee-topbar">
+        <div id="ee-bc" class="bc" style="margin:0;flex:1;font-size:12.5px"></div>
+        <span id="ee-save-status" style="font-size:12px;color:var(--green);font-weight:600;opacity:0;transition:opacity .5s"></span>
+        <select class="fs" id="ee-status" style="width:112px;font-size:12.5px;padding:5px 8px">
+          <option value="Draft">Draft</option>
+          <option value="Sent">Sent</option>
+          <option value="Approved">Approved</option>
+          <option value="Declined">Declined</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="printEstimateFromEditor()">🖨 Print PDF</button>
+        <button class="btn btn-primary btn-sm" onclick="saveEstimateEditor()">Save</button>
+      </div>
+      <div class="ee-split">
+        <!-- LEFT: FORM -->
+        <div class="ee-left">
+          <div class="ee-card">
+            <div class="ee-card-title">Estimate Details</div>
+            <input type="hidden" id="ee-id">
+            <div class="frow">
+              <div class="fg"><label class="fl">Client</label><select class="fs" id="ee-client" onchange="eePopulateProjects()"></select></div>
+              <div class="fg"><label class="fl">Project / Job</label><select class="fs" id="ee-project" onchange="updateLivePDF()"></select></div>
+            </div>
+          </div>
+          <div class="ee-card" style="flex:1;display:flex;flex-direction:column">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div class="ee-card-title" style="margin:0">Line Items</div>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-secondary btn-sm" onclick="eeAddSection()">+ Section</button>
+                <button class="btn btn-primary btn-sm" onclick="eeAddItem()">+ Item</button>
+              </div>
+            </div>
+            <div class="ee-li-col-hd">
+              <span></span><span>Description</span><span>Size</span>
+              <span style="text-align:center">Qty</span>
+              <span style="text-align:right">Item Cost</span>
+              <span style="text-align:right">Total</span><span></span>
+            </div>
+            <div id="ee-li-container" style="flex:1;min-height:80px"></div>
+            <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:9px">
+              <div class="li-tot"><span class="li-tl">Subtotal</span><span class="li-tv" id="ee-sub">$0.00</span></div>
+              <div class="li-tot"><span class="li-tl" id="ee-tax-label2">Sales Tax (8.375%)</span><span class="li-tv" id="ee-tax2">$0.00</span></div>
+              <div class="li-tot" style="padding-top:5px;margin-top:3px;border-top:1px solid var(--border)">
+                <span class="li-tl" style="font-size:14px;font-weight:700;color:var(--text)">Total</span>
+                <span class="li-tv" id="ee-total2" style="font-size:15px;color:var(--accent);font-weight:800">$0.00</span>
+              </div>
+            </div>
+          </div>
+          <div class="ee-card">
+            <div class="ee-card-title">Notes to Client</div>
+            <textarea class="fta" id="ee-notes" placeholder="PLEASE NOTE: All glass is tempered per safety code. 50% deposit required upon approval." style="min-height:72px;resize:vertical" oninput="updateLivePDF()"></textarea>
+          </div>
+        </div>
+        <!-- RIGHT: LIVE PDF PREVIEW -->
+        <div class="ee-right">
+          <div style="font-size:9.5px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.9px;text-align:center;margin-bottom:14px">Live Preview</div>
+          <div id="ee-pdf-preview" class="ee-pdf-paper"></div>
+        </div>
+      </div>
     </div>
 
     <!-- INVOICES LIST -->
@@ -927,7 +1007,7 @@ function showPage(name,opts={}){
   document.getElementById('page-'+name).classList.add('active');
   const ni=document.getElementById('nav-'+name.split('-')[0]);
   if(ni)ni.classList.add('active');
-  const titles={dashboard:'Dashboard',clients:'Clients','client-detail':'Clients',projects:'Projects','project-detail':'Projects',estimates:'Estimates',invoices:'Invoices',pipeline:'Pipeline',reports:'Reports',auditlog:'Audit Log'};
+  const titles={dashboard:'Dashboard',clients:'Clients','client-detail':'Clients',projects:'Projects','project-detail':'Projects',estimates:'Estimates','estimate-editor':'Estimate',invoices:'Invoices',pipeline:'Pipeline',reports:'Reports',auditlog:'Audit Log'};
   document.getElementById('topbar-title').textContent=titles[name]||name;
   document.getElementById('topbar-actions').innerHTML='';
   if(name==='dashboard')renderDashboard();
@@ -1477,21 +1557,7 @@ function populateEstProjects(selPid){
   const pr=DB.projects().filter(p=>p.clientId===cid);
   document.getElementById('me-project').innerHTML='<option value="">— No project —</option>'+pr.map(p=>`<option value="${p.id}" ${p.id===selPid?'selected':''}>${p.name}</option>`).join('');
 }
-function openEstimateModal(eid,preProjectId){
-  document.getElementById('me-title').textContent=eid?'Edit Estimate':'New Estimate';
-  document.getElementById('me-id').value=eid||'';
-  document.getElementById('li-container').innerHTML='';
-  const e=eid?DB.estimates().find(x=>x.id===eid):null;
-  const projId=e?.projectId||preProjectId||null;
-  const proj=projId?DB.projects().find(p=>p.id===projId):null;
-  const cid=e?.clientId||proj?.clientId||null;
-  populateEstClients(cid);
-  setTimeout(()=>populateEstProjects(projId),0);
-  document.getElementById('me-status').value=e?.status||'Draft';
-  document.getElementById('me-notes').value=e?.notes||DB.settings().defaultEstNotes||'';
-  (e?.lineItems||[]).forEach(li=>addLI(li));
-  if(!e)addLI(); calcEst(); openModal('m-estimate');
-}
+function openEstimateModal(eid,preProjectId){openEstimateEditor(eid,preProjectId);}
 function saveEstimate(){
   const cid=document.getElementById('me-client').value; if(!cid){alert('Select a client');return;}
   const lis=collectLI(),sub=lis.reduce((s,i)=>s+i.lineTotal,0),tax=sub*getTax(),total=sub+tax;
@@ -1509,6 +1575,304 @@ function saveEstimate(){
   if(document.getElementById('page-estimates').classList.contains('active'))renderEstimates();
   if(document.getElementById('page-project-detail').classList.contains('active'))loadProjectDetail(currentProjectId);
 }
+// ── ESTIMATE EDITOR (FULL-SCREEN) ────────
+let eeReturnPage='project-detail',eeReturnOpts={};
+let eeDragSrc=null;
+
+function openEstimateEditor(eid,preProjectId){
+  const e=eid?DB.estimates().find(x=>x.id===eid):null;
+  const projId=e?.projectId||preProjectId||null;
+  const proj=projId?DB.projects().find(p=>p.id===projId):null;
+  const clients=DB.clients();
+  const cid=e?.clientId||proj?.clientId||clients[0]?.id||'';
+
+  document.getElementById('ee-id').value=eid||'';
+  document.getElementById('ee-status').value=e?.status||'Draft';
+  document.getElementById('ee-notes').value=e?.notes||DB.settings().defaultEstNotes||'';
+
+  document.getElementById('ee-client').innerHTML=clients.length
+    ?clients.map(c=>`<option value="${c.id}" ${c.id===cid?'selected':''}>${c.fname} ${c.lname}</option>`).join('')
+    :'<option value="">— No clients —</option>';
+  eePopulateProjects(projId);
+
+  const estLabel=e?e.num:'New Estimate';
+  if(proj){
+    eeReturnPage='project-detail';eeReturnOpts={projectId:proj.id};
+    document.getElementById('ee-bc').innerHTML=`<span class="bc-link" onclick="leaveEstimateEditor()">${proj.name}</span> <span style="color:var(--text3)">›</span> <span class="bc-cur">${estLabel}</span>`;
+  }else{
+    eeReturnPage='estimates';eeReturnOpts={};
+    document.getElementById('ee-bc').innerHTML=`<span class="bc-link" onclick="leaveEstimateEditor()">Estimates</span> <span style="color:var(--text3)">›</span> <span class="bc-cur">${estLabel}</span>`;
+  }
+
+  const taxRate=DB.settings().taxRate||8.375;
+  document.getElementById('ee-tax-label2').textContent=`Sales Tax (${taxRate}%)`;
+
+  const container=document.getElementById('ee-li-container');
+  container.innerHTML='';
+  const items=e?.lineItems||[];
+  if(items.length){
+    items.forEach(li=>{
+      if(li.type==='section')eeAddSection(li.title);
+      else eeAddItem(li);
+    });
+  }else{
+    eeAddSection('');
+    eeAddItem();
+  }
+
+  calcEditorEst();
+  showPage('estimate-editor');
+  document.getElementById('topbar-title').textContent=estLabel;
+}
+
+function leaveEstimateEditor(){showPage(eeReturnPage,eeReturnOpts);}
+
+function eePopulateProjects(selPid){
+  const cid=document.getElementById('ee-client').value;
+  const pr=DB.projects().filter(p=>p.clientId===cid);
+  const cur=selPid||document.getElementById('ee-project')?.value||'';
+  document.getElementById('ee-project').innerHTML=
+    '<option value="">— No project —</option>'+
+    pr.map(p=>`<option value="${p.id}" ${p.id===cur?'selected':''}>${p.name}</option>`).join('');
+  updateLivePDF();
+}
+
+function eeAddSection(title){
+  const id='ees_'+Date.now()+'_'+Math.random().toString(36).substr(2,4);
+  const wrap=document.createElement('div');
+  wrap.className='ee-li-row-wrap'; wrap.id='wrap_'+id; wrap.draggable=true;
+  wrap.innerHTML=`
+    <span class="ee-drag-handle">⠿</span>
+    <div class="ee-li-section-row" style="flex:1">
+      <input class="fi" id="${id}" placeholder="SECTION NAME  (e.g. SHOWER, MIRRORS)" value="${(title||'').replace(/"/g,'&quot;')}"
+        style="font-weight:700;font-size:13px;flex:1;background:transparent;border:none;padding:2px 4px;outline:none;color:#92400e"
+        oninput="updateLivePDF()">
+      <button class="btn btn-ghost btn-xs" style="color:var(--red)" onclick="this.closest('.ee-li-row-wrap').remove();calcEditorEst()">✕</button>
+    </div>`;
+  setupEEDrag(wrap);
+  document.getElementById('ee-li-container').appendChild(wrap);
+}
+
+function eeAddItem(item){
+  const id='eei_'+Date.now()+'_'+Math.random().toString(36).substr(2,4);
+  const wrap=document.createElement('div');
+  wrap.className='ee-li-row-wrap'; wrap.id='wrap_'+id; wrap.draggable=true;
+  wrap.innerHTML=`
+    <span class="ee-drag-handle" style="margin-top:6px">⠿</span>
+    <div class="ee-li-item-row" style="flex:1;padding:6px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm)">
+      <textarea class="fta" id="${id}_desc" placeholder="Description" rows="2"
+        style="min-height:0;resize:none;font-size:13px;padding:4px 6px"
+        oninput="updateLivePDF()">${(item?.desc||'').replace(/</g,'&lt;')}</textarea>
+      <input class="fi" id="${id}_size" placeholder='e.g. 36"×78"' value="${(item?.size||'').replace(/"/g,'&quot;')}"
+        style="font-size:12px;text-align:center" oninput="updateLivePDF()">
+      <input class="fi" type="number" id="${id}_qty" value="${item?.qty??1}" min="0" step="any"
+        style="text-align:center" oninput="calcEditorEst()">
+      <input class="fi" type="number" id="${id}_up" placeholder="0.00" value="${item?.unitPrice||''}"
+        style="text-align:right" oninput="calcEditorEst()">
+      <input class="fi td-mono" id="${id}_t" readonly tabindex="-1"
+        value="${item?$$(item.lineTotal||0):'$0.00'}"
+        style="background:var(--surface2);color:var(--text2);text-align:right;font-size:12.5px">
+      <button class="btn btn-ghost" style="color:var(--red);padding:3px 4px;align-self:flex-start"
+        onclick="this.closest('.ee-li-row-wrap').remove();calcEditorEst()">✕</button>
+    </div>`;
+  setupEEDrag(wrap);
+  document.getElementById('ee-li-container').appendChild(wrap);
+  calcEditorEst();
+}
+
+function setupEEDrag(el){
+  el.addEventListener('dragstart',e=>{
+    eeDragSrc=el;
+    setTimeout(()=>el.classList.add('dragging'),0);
+    e.dataTransfer.effectAllowed='move';
+  });
+  el.addEventListener('dragend',()=>{
+    el.classList.remove('dragging');
+    document.querySelectorAll('.ee-li-row-wrap').forEach(r=>r.classList.remove('drag-over'));
+    eeDragSrc=null;
+  });
+  el.addEventListener('dragover',e=>{
+    e.preventDefault();
+    if(eeDragSrc&&eeDragSrc!==el)el.classList.add('drag-over');
+  });
+  el.addEventListener('dragleave',()=>el.classList.remove('drag-over'));
+  el.addEventListener('drop',e=>{
+    e.preventDefault();
+    el.classList.remove('drag-over');
+    if(!eeDragSrc||eeDragSrc===el)return;
+    const container=document.getElementById('ee-li-container');
+    const all=[...container.querySelectorAll('.ee-li-row-wrap')];
+    const si=all.indexOf(eeDragSrc),ti=all.indexOf(el);
+    if(si<ti)container.insertBefore(eeDragSrc,el.nextSibling);
+    else container.insertBefore(eeDragSrc,el);
+    calcEditorEst();
+  });
+}
+
+function collectEditorItems(){
+  const rows=document.getElementById('ee-li-container').querySelectorAll('.ee-li-row-wrap');
+  const items=[];
+  rows.forEach(wrap=>{
+    const secInput=wrap.querySelector('.ee-li-section-row input');
+    if(secInput){items.push({type:'section',title:secInput.value.trim()});return;}
+    const id=wrap.id.replace('wrap_','');
+    const desc=wrap.querySelector(`#${id}_desc`)?.value.trim()||'';
+    const size=wrap.querySelector(`#${id}_size`)?.value.trim()||'';
+    const qty=parseFloat(wrap.querySelector(`#${id}_qty`)?.value)||0;
+    const unitPrice=parseFloat(wrap.querySelector(`#${id}_up`)?.value)||0;
+    const lineTotal=qty*unitPrice;
+    items.push({type:'item',desc,size,qty,unitPrice,lineTotal});
+  });
+  return items;
+}
+
+function calcEditorEst(){
+  let sub=0;
+  document.getElementById('ee-li-container').querySelectorAll('.ee-li-row-wrap').forEach(wrap=>{
+    const id=wrap.id.replace('wrap_','');
+    const qEl=wrap.querySelector(`#${id}_qty`),uEl=wrap.querySelector(`#${id}_up`),tEl=wrap.querySelector(`#${id}_t`);
+    if(!qEl||!uEl)return;
+    const lt=(parseFloat(qEl.value)||0)*(parseFloat(uEl.value)||0);
+    sub+=lt;
+    if(tEl)tEl.value=$$(lt);
+  });
+  const taxRate=(DB.settings().taxRate||8.375)/100;
+  document.getElementById('ee-sub').textContent=$$(sub);
+  document.getElementById('ee-tax2').textContent=$$(sub*taxRate);
+  document.getElementById('ee-total2').textContent=$$(sub*(1+taxRate));
+  updateLivePDF();
+}
+
+function saveEstimateEditor(){
+  const cid=document.getElementById('ee-client').value;
+  if(!cid){alert('Select a client');return;}
+  const items=collectEditorItems();
+  const sub=items.filter(i=>i.type==='item').reduce((s,i)=>s+i.lineTotal,0);
+  const taxRate=(DB.settings().taxRate||8.375)/100;
+  const tax=sub*taxRate,total=sub+tax;
+  const list=DB.estimates(),eid=document.getElementById('ee-id').value;
+  const est={
+    id:eid||uid('est'),
+    num:eid?(list.find(x=>x.id===eid)||{}).num:seqNum(getEstPrefix(),list,'estStart'),
+    clientId:cid,projectId:document.getElementById('ee-project').value,
+    status:document.getElementById('ee-status').value,
+    notes:document.getElementById('ee-notes').value.trim(),
+    lineItems:items,sub,tax,total,
+    createdAt:eid?(list.find(x=>x.id===eid)||{}).createdAt:today()
+  };
+  const idx=list.findIndex(x=>x.id===est.id);
+  if(idx>=0){list[idx]=est;audit('Estimate Updated',est.num);}
+  else{list.push(est);audit('Estimate Created',est.num);if(est.projectId)postSystemUpdate(est.projectId,`Estimate ${est.num} created — Total: ${$$(est.total)}`);}
+  DB.set('estimates',list);
+  if(!eid){
+    document.getElementById('ee-id').value=est.id;
+    const bc=document.getElementById('ee-bc');
+    bc.innerHTML=bc.innerHTML.replace('New Estimate',est.num);
+    document.getElementById('topbar-title').textContent=est.num;
+  }
+  const st=document.getElementById('ee-save-status');
+  st.textContent='Saved ✓';st.style.opacity='1';
+  setTimeout(()=>{st.style.opacity='0';},2200);
+}
+
+function printEstimateFromEditor(){
+  const eid=document.getElementById('ee-id').value;
+  if(!eid){saveEstimateEditor();}
+  const id=document.getElementById('ee-id').value;
+  if(id)printEstimate(id);
+}
+
+function updateLivePDF(){
+  const el=document.getElementById('ee-pdf-preview');
+  if(!el)return;
+  el.innerHTML=buildEditorPDFHtml();
+}
+
+function buildEditorPDFHtml(){
+  const s=DB.settings(),bc=getBrandColor();
+  const cid=document.getElementById('ee-client')?.value;
+  const pid=document.getElementById('ee-project')?.value;
+  const c=cid?DB.clients().find(x=>x.id===cid):null;
+  const p=pid?DB.projects().find(x=>x.id===pid):null;
+  const eid=document.getElementById('ee-id').value;
+  const e=eid?DB.estimates().find(x=>x.id===eid):null;
+  const num=e?.num||'DRAFT';
+  const dateStr=e?.createdAt||today();
+  const notes=(document.getElementById('ee-notes')?.value||'').replace(/</g,'&lt;');
+  const items=collectEditorItems();
+  const sub=items.filter(i=>i.type==='item').reduce((s,i)=>s+i.lineTotal,0);
+  const taxRate=(s.taxRate||8.375)/100;
+  const tax=sub*taxRate,total=sub+tax;
+
+  const logoHtml=s.logo
+    ?`<img src="${s.logo}" style="max-height:44px;max-width:130px;object-fit:contain" alt="Logo">`
+    :`<div style="font-size:15px;font-weight:900;color:#1e293b">${s.companyName||'EZ Glass'}</div>`;
+
+  const tableRows=items.map((li,i)=>{
+    if(li.type==='section'){
+      return`<tr><td colspan="5" style="padding:7px 10px;font-size:11px;font-weight:800;color:#1e293b;background:#f1f5f9;letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid #e2e8f0">${li.title||''}</td></tr>`;
+    }
+    const bg=i%2===0?'white':'#f8fafc';
+    return`<tr style="background:${bg}">
+      <td style="padding:6px 10px;font-size:12px;color:#334155;border-bottom:1px solid #f1f5f9;vertical-align:top">${(li.desc||'').replace(/\n/g,'<br>').replace(/</g,'&lt;')}</td>
+      <td style="padding:6px 10px;font-size:12px;color:#334155;border-bottom:1px solid #f1f5f9;text-align:center;white-space:nowrap">${li.size||''}</td>
+      <td style="padding:6px 10px;font-size:12px;color:#334155;border-bottom:1px solid #f1f5f9;text-align:center">${li.qty||''}</td>
+      <td style="padding:6px 10px;font-size:12px;color:#334155;border-bottom:1px solid #f1f5f9;text-align:right;font-family:'DM Mono',monospace">${li.unitPrice?$$(li.unitPrice):''}</td>
+      <td style="padding:6px 10px;font-size:12px;font-weight:600;color:#1e293b;border-bottom:1px solid #f1f5f9;text-align:right;font-family:'DM Mono',monospace">${li.lineTotal?$$(li.lineTotal):''}</td>
+    </tr>`;
+  }).join('');
+
+  return`
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+      <div>${logoHtml}</div>
+      <div style="text-align:right">
+        <div style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.7px">Estimate</div>
+        <div style="font-size:18px;font-weight:800;color:#1e293b;letter-spacing:-.5px">#${num}</div>
+        <div style="font-size:10.5px;color:#64748b;margin-top:2px">${dateStr}</div>
+      </div>
+    </div>
+    <div style="border-top:2.5px solid ${bc};margin-bottom:16px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
+      <div>
+        <div style="font-size:8.5px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.7px;margin-bottom:3px">Bill To</div>
+        <div style="font-size:12.5px;font-weight:700;color:#1e293b">${c?c.fname+' '+c.lname:'—'}</div>
+        ${c?.address?`<div style="font-size:11px;color:#64748b;margin-top:1px">${c.address}</div>`:''}
+        ${c?.phone||c?.email?`<div style="font-size:11px;color:#64748b">${[c?.phone,c?.email].filter(Boolean).join(' · ')}</div>`:''}
+        ${p?`<div style="font-size:10.5px;color:#94a3b8;margin-top:3px">Job: ${p.name}${p.desc?' — '+p.desc:''}</div>`:''}
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:8.5px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.7px;margin-bottom:3px">From</div>
+        <div style="font-size:12.5px;font-weight:700;color:#1e293b">${s.companyName||''}</div>
+        ${s.companyAddress?`<div style="font-size:11px;color:#64748b;margin-top:1px">${s.companyAddress}</div>`:''}
+        ${s.companyPhone||s.companyEmail?`<div style="font-size:11px;color:#64748b">${[s.companyPhone,s.companyEmail].filter(Boolean).join(' · ')}</div>`:''}
+        ${s.companyWebsite?`<div style="font-size:11px;color:#64748b">${s.companyWebsite}</div>`:''}
+      </div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
+      <thead>
+        <tr style="background:${bc}">
+          <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.4px">Description</th>
+          <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.4px;width:80px">Size</th>
+          <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.4px;width:36px">Qty</th>
+          <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.4px;width:76px">Item Cost</th>
+          <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.4px;width:76px">Total</th>
+        </tr>
+      </thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:${notes?'14px':'16px'}">
+      <table style="border-collapse:collapse;border:1px solid #e2e8f0;min-width:220px">
+        <tr><td style="padding:6px 12px;font-size:11.5px;color:#64748b;border:1px solid #e2e8f0">Subtotal</td><td style="padding:6px 12px;text-align:right;font-size:11.5px;font-family:'DM Mono',monospace;color:#1e293b;border:1px solid #e2e8f0;min-width:85px">${$$(sub)}</td></tr>
+        <tr><td style="padding:6px 12px;font-size:11.5px;color:#64748b;border:1px solid #e2e8f0">Sales Tax (${s.taxRate||8.375}%)</td><td style="padding:6px 12px;text-align:right;font-size:11.5px;font-family:'DM Mono',monospace;color:#1e293b;border:1px solid #e2e8f0">${$$(tax)}</td></tr>
+        <tr style="background:${bc}"><td style="padding:8px 12px;font-size:12.5px;font-weight:700;color:white;border:1px solid rgba(255,255,255,.2)">Total</td><td style="padding:8px 12px;text-align:right;font-size:12.5px;font-weight:700;font-family:'DM Mono',monospace;color:white;border:1px solid rgba(255,255,255,.2)">${$$(total)}</td></tr>
+      </table>
+    </div>
+    ${notes?`<div style="margin-bottom:14px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:5px;font-size:11px;color:#92400e;line-height:1.6;white-space:pre-wrap">${notes}</div>`:''}
+    <div style="padding-top:12px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8;text-align:center;line-height:1.9">
+      ${[s.companyName,s.companyPhone,s.companyEmail,s.companyAddress,s.companyWebsite].filter(Boolean).join(' · ')}
+    </div>`;
+}
+
 function renderEstimates(){
   const q=(document.getElementById('estimates-search')?.value||'').toLowerCase();
   const allEsts=DB.estimates(),cl=DB.clients(),pr=DB.projects(),invs=DB.invoices();
@@ -1538,30 +1902,7 @@ function renderEstimates(){
       </td></tr>`;
   }).join('');
 }
-function viewEstimate(id){
-  const e=DB.estimates().find(x=>x.id===id); if(!e)return;
-  const c=DB.clients().find(x=>x.id===e.clientId),p=DB.projects().find(x=>x.id===e.projectId);
-  const inv=DB.invoices().some(i=>i.estimateId===id);
-  document.getElementById('ve-title').textContent=e.num;
-  document.getElementById('ve-sub').textContent=(c?c.fname+' '+c.lname:'')+' · '+e.createdAt;
-  document.getElementById('ve-badge').innerHTML=`<span class="badge ${EB[e.status]}">${e.status}</span>`;
-  document.getElementById('ve-body').innerHTML=`
-    <div class="frow" style="margin-bottom:14px">${kv('Client',c?c.fname+' '+c.lname:'—')}${kv('Project',p?p.name:'—')}${kv('Date',e.createdAt)}${kv('Notes',e.notes||'—')}</div>
-    <table style="margin-bottom:12px"><thead><tr><th>Description</th><th>Qty</th><th>Unit $</th><th style="text-align:right">Total</th></tr></thead>
-    <tbody>${(e.lineItems||[]).map(li=>`<tr><td>${li.desc||'—'}</td><td>${li.qty}</td><td>${$$(li.unitPrice)}</td><td style="text-align:right;font-family:'DM Mono',monospace;font-weight:600">${$$(li.lineTotal)}</td></tr>`).join('')}</tbody></table>
-    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
-      ${tot('Subtotal',$$(e.sub))}${tot(`Tax (${DB.settings().taxRate||8.875}%)`,$$(e.tax))}
-      <div style="display:flex;gap:50px;padding-top:8px;border-top:1px solid var(--border);margin-top:4px"><span style="font-weight:800;font-size:14px">Total</span><span style="font-family:'DM Mono',monospace;font-size:15px;color:var(--accent);font-weight:700">${$$(e.total)}</span></div>
-    </div>`;
-  document.getElementById('ve-ft').innerHTML=`
-    <button class="btn btn-secondary" onclick="closeModal('m-view-est')">Close</button>
-    <button class="btn btn-secondary" onclick="openEstimateModal('${id}');closeModal('m-view-est')">Edit</button>
-    <button class="btn btn-pdf" onclick="printEstimate('${id}');closeModal('m-view-est')">🖨 PDF</button>
-    <button class="btn btn-send" onclick="sendEstimate('${id}');closeModal('m-view-est')">📧 Send</button>
-    ${!inv&&e.status==='Approved'?`<button class="btn btn-convert" onclick="doConvert('${id}');closeModal('m-view-est')">⚡ Convert to Invoice</button>`:''}
-    ${inv?`<span class="badge b-green" style="padding:6px 12px;align-self:center">✓ Invoiced</span>`:''}`;
-  openModal('m-view-est');
-}
+function viewEstimate(id){openEstimateEditor(id);}
 function quickApproveAndConvert(eid){
   if(!confirm('Mark this estimate as Approved and convert to Invoice?'))return;
   const list=DB.estimates(),idx=list.findIndex(x=>x.id===eid);
@@ -1634,17 +1975,40 @@ function buildPDFClientBlock(c,p){
 
 function buildPDFLineItems(lis){
   const bc=getBrandColor();
-  return `
+  const hasNew=lis.some(li=>li.type==='section'||li.size!==undefined);
+  if(hasNew){
+    const rows=lis.map((li,i)=>{
+      if(li.type==='section')return`<tr><td colspan="5" style="padding:9px 14px;font-size:11.5px;font-weight:800;color:#1e293b;background:#f1f5f9;text-transform:uppercase;letter-spacing:.5px;border:1px solid #e2e8f0">${li.title||''}</td></tr>`;
+      return`<tr style="background:${i%2===0?'white':'#f8fafc'}">
+        <td style="padding:10px 14px;font-size:13px;color:#334155;border:1px solid #e2e8f0;vertical-align:top">${(li.desc||'—').replace(/\n/g,'<br>')}</td>
+        <td style="padding:10px 14px;font-size:13px;color:#334155;border:1px solid #e2e8f0;text-align:center;white-space:nowrap">${li.size||''}</td>
+        <td style="padding:10px 14px;text-align:center;font-size:13px;color:#334155;border:1px solid #e2e8f0">${li.qty}</td>
+        <td style="padding:10px 14px;text-align:right;font-size:13px;color:#334155;border:1px solid #e2e8f0;font-family:'DM Mono',monospace">${$$(li.unitPrice)}</td>
+        <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:600;color:#1e293b;border:1px solid #e2e8f0;font-family:'DM Mono',monospace">${$$(li.lineTotal)}</td>
+      </tr>`;
+    }).join('');
+    return`
     <div style="font-size:11px;font-weight:800;color:#1e293b;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Itemized Details</div>
     <table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;margin-bottom:0;border-radius:8px;overflow:hidden">
-      <thead>
-        <tr style="background:${bc}">
-          <th style="padding:10px 14px;text-align:left;font-size:11.5px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.5px;border:1px solid rgba(255,255,255,.2)">Description</th>
-          <th style="padding:10px 14px;text-align:center;font-size:11.5px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.5px;border:1px solid rgba(255,255,255,.2);width:80px">Qty</th>
-          <th style="padding:10px 14px;text-align:right;font-size:11.5px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.5px;border:1px solid rgba(255,255,255,.2);width:110px">Price</th>
-          <th style="padding:10px 14px;text-align:right;font-size:11.5px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.5px;border:1px solid rgba(255,255,255,.2);width:110px">Total</th>
-        </tr>
-      </thead>
+      <thead><tr style="background:${bc}">
+        <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.5px;border:1px solid rgba(255,255,255,.2)">Description</th>
+        <th style="padding:10px 14px;text-align:center;font-size:11px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.5px;border:1px solid rgba(255,255,255,.2);width:90px">Size</th>
+        <th style="padding:10px 14px;text-align:center;font-size:11px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.5px;border:1px solid rgba(255,255,255,.2);width:55px">Qty</th>
+        <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.5px;border:1px solid rgba(255,255,255,.2);width:110px">Item Cost</th>
+        <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.5px;border:1px solid rgba(255,255,255,.2);width:110px">Total</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
+  return`
+    <div style="font-size:11px;font-weight:800;color:#1e293b;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Itemized Details</div>
+    <table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;margin-bottom:0;border-radius:8px;overflow:hidden">
+      <thead><tr style="background:${bc}">
+        <th style="padding:10px 14px;text-align:left;font-size:11.5px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.5px;border:1px solid rgba(255,255,255,.2)">Description</th>
+        <th style="padding:10px 14px;text-align:center;font-size:11.5px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.5px;border:1px solid rgba(255,255,255,.2);width:80px">Qty</th>
+        <th style="padding:10px 14px;text-align:right;font-size:11.5px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.5px;border:1px solid rgba(255,255,255,.2);width:110px">Price</th>
+        <th style="padding:10px 14px;text-align:right;font-size:11.5px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:.5px;border:1px solid rgba(255,255,255,.2);width:110px">Total</th>
+      </tr></thead>
       <tbody>
         ${lis.map((li,i)=>`<tr style="background:${i%2===0?'white':'#f8fafc'}">
           <td style="padding:10px 14px;font-size:13.5px;color:#334155;border:1px solid #e2e8f0">${li.desc||'—'}</td>
@@ -1672,14 +2036,41 @@ function buildPDFTotals(sub,tax,total){
 function printEstimate(id){
   const e=DB.estimates().find(x=>x.id===id); if(!e)return;
   const c=DB.clients().find(x=>x.id===e.clientId),p=DB.projects().find(x=>x.id===e.projectId);
+  const s=DB.settings(),bc=getBrandColor();
+  const logoHtml=s.logo?`<img src="${s.logo}" style="max-height:55px;max-width:160px;object-fit:contain" alt="Logo">`:`<span style="font-size:20px;font-weight:900;color:#1e293b">${s.companyName||'EZ Glass'}</span>`;
   document.getElementById('pdf-title').textContent='Estimate '+e.num;
-  document.getElementById('pdf-content').innerHTML=
-    buildPDFHeader('Quotation',e.num,e.createdAt)+
-    buildPDFClientBlock(c,p)+
-    buildPDFLineItems(e.lineItems||[])+
-    buildPDFTotals(e.sub,e.tax,e.total)+
-    (e.notes?`<div style="margin-top:20px"><div style="font-size:11px;font-weight:800;color:#1e293b;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Notes</div><div style="padding:12px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;color:#64748b">${e.notes}</div></div>`:'')+
-    `<div style="margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;text-align:center">Thank you for your business! · ${DB.settings().companyName||''}</div>`;
+  document.getElementById('pdf-content').innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+      <div>${logoHtml}</div>
+      <div style="text-align:right">
+        <div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.7px">Estimate</div>
+        <div style="font-size:24px;font-weight:900;color:#1e293b;letter-spacing:-.6px">#${e.num}</div>
+        <div style="font-size:12px;color:#64748b;margin-top:2px">${e.createdAt}</div>
+      </div>
+    </div>
+    <div style="border-top:2.5px solid ${bc};margin-bottom:22px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:22px">
+      <div>
+        <div style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">Bill To</div>
+        <div style="font-size:15px;font-weight:700;color:#1e293b">${c?c.fname+' '+c.lname:'—'}</div>
+        ${c?.address?`<div style="font-size:12.5px;color:#64748b;margin-top:2px">${c.address}</div>`:''}
+        ${c?.phone||c?.email?`<div style="font-size:12.5px;color:#64748b">${[c?.phone,c?.email].filter(Boolean).join(' · ')}</div>`:''}
+        ${p?`<div style="font-size:12px;color:#94a3b8;margin-top:5px">Job: ${p.name}${p.desc?' — '+p.desc:''}</div>`:''}
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">From</div>
+        <div style="font-size:14px;font-weight:700;color:#1e293b">${s.companyName||''}</div>
+        ${s.companyAddress?`<div style="font-size:12.5px;color:#64748b;margin-top:2px">${s.companyAddress}</div>`:''}
+        ${s.companyPhone||s.companyEmail?`<div style="font-size:12.5px;color:#64748b">${[s.companyPhone,s.companyEmail].filter(Boolean).join(' · ')}</div>`:''}
+        ${s.companyWebsite?`<div style="font-size:12.5px;color:#64748b">${s.companyWebsite}</div>`:''}
+      </div>
+    </div>
+    ${buildPDFLineItems(e.lineItems||[])}
+    ${buildPDFTotals(e.sub,e.tax,e.total)}
+    ${e.notes?`<div style="margin-top:18px;padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:13px;color:#92400e;white-space:pre-wrap">${e.notes}</div>`:''}
+    <div style="margin-top:28px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:11.5px;color:#94a3b8;text-align:center;line-height:1.9">
+      ${[s.companyName,s.companyPhone,s.companyEmail,s.companyAddress,s.companyWebsite].filter(Boolean).join(' · ')}
+    </div>`;
   openModal('m-pdf');
   audit('PDF Generated','Estimate '+e.num);
 }
