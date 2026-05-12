@@ -562,6 +562,7 @@ tr:last-child td{border-bottom:none}
             <button class="btn btn-ghost btn-sm" id="pl-view-list" onclick="setPipelineView('list')" style="border-radius:5px">☰ List</button>
           </div>
         </div>
+        <button class="btn btn-primary btn-sm" onclick="openQuickJobModal()">+ New Job</button>
       </div>
       <!-- Search -->
       <div style="margin-bottom:14px">
@@ -902,6 +903,48 @@ tr:last-child td{border-bottom:none}
   <div class="modal" style="max-width:360px">
     <div class="modal-hd"><div class="modal-title" id="m-move-title">Move Job</div><button class="btn btn-ghost btn-sm" onclick="closeModal('m-move')">✕</button></div>
     <div class="modal-body" id="m-move-body"></div>
+  </div>
+</div>
+
+<!-- QUICK JOB (Pipeline) -->
+<div class="overlay" id="m-quick-job">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-hd">
+      <div class="modal-title">New Job</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('m-quick-job')">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Customer -->
+      <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Customer</div>
+      <div style="display:flex;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:2px;width:fit-content;margin-bottom:12px">
+        <button class="btn btn-ghost btn-sm pl-view-active" id="qj-tab-existing" onclick="qjSetTab('existing')" style="border-radius:5px">Existing</button>
+        <button class="btn btn-ghost btn-sm" id="qj-tab-new" onclick="qjSetTab('new')" style="border-radius:5px">+ New Customer</button>
+      </div>
+      <div id="qj-existing-panel">
+        <div class="fg"><label class="fl">Select customer *</label><select class="fs" id="qj-client"></select></div>
+      </div>
+      <div id="qj-new-panel" style="display:none">
+        <div class="frow">
+          <div class="fg"><label class="fl">First Name *</label><input class="fi" id="qj-fname" placeholder="Jane"></div>
+          <div class="fg"><label class="fl">Last Name *</label><input class="fi" id="qj-lname" placeholder="Smith"></div>
+        </div>
+        <div class="frow fgap">
+          <div class="fg"><label class="fl">Phone</label><input class="fi" id="qj-phone" placeholder="(555) 123-4567" type="tel"></div>
+          <div class="fg"><label class="fl">Email</label><input class="fi" id="qj-email" placeholder="jane@example.com" type="email"></div>
+        </div>
+      </div>
+      <!-- Job -->
+      <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">Job Details</div>
+        <div class="fg"><label class="fl">Site Address *</label><input class="fi" id="qj-name" placeholder="123 Main St, Brooklyn, NY 11201"></div>
+        <div class="fg fgap"><label class="fl">Description <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input class="fi" id="qj-desc" placeholder="e.g. Frameless shower, mirror wall…"></div>
+        <div class="fg fgap"><label class="fl">Stage</label><select class="fs" id="qj-status"></select></div>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-secondary" onclick="closeModal('m-quick-job')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveQuickJob()">Create Job</button>
+    </div>
   </div>
 </div>
 
@@ -2364,6 +2407,56 @@ function fmtPhone(input){
   if(v.length>=6)v=`(${v.substring(0,3)}) ${v.substring(3,6)}-${v.substring(6)}`;
   else if(v.length>=3)v=`(${v.substring(0,3)}) ${v.substring(3)}`;
   input.value=v;
+}
+
+function openQuickJobModal(){
+  ['qj-fname','qj-lname','qj-phone','qj-email','qj-name','qj-desc'].forEach(id=>document.getElementById(id).value='');
+  const clients=DB.clients();
+  const clientSel=document.getElementById('qj-client');
+  clientSel.innerHTML=clients.length
+    ?clients.map(c=>`<option value="${c.id}">${c.fname} ${c.lname}${c.phone?' · '+c.phone:''}</option>`).join('')
+    :'<option value="">— No clients yet —</option>';
+  document.getElementById('qj-status').innerHTML=PIPELINE_STAGES.map(s=>`<option value="${s.label}">${s.label}</option>`).join('');
+  qjSetTab(clients.length?'existing':'new');
+  openModal('m-quick-job');
+}
+
+function qjSetTab(tab){
+  const isNew=tab==='new';
+  document.getElementById('qj-existing-panel').style.display=isNew?'none':'';
+  document.getElementById('qj-new-panel').style.display=isNew?'':'none';
+  document.getElementById('qj-tab-existing').classList.toggle('pl-view-active',!isNew);
+  document.getElementById('qj-tab-new').classList.toggle('pl-view-active',isNew);
+}
+
+async function saveQuickJob(){
+  const jobName=document.getElementById('qj-name').value.trim();
+  if(!jobName){alert('Site address is required');return;}
+  const isNewCustomer=document.getElementById('qj-new-panel').style.display!=='none';
+  let clientId;
+  if(isNewCustomer){
+    const fn=document.getElementById('qj-fname').value.trim();
+    const ln=document.getElementById('qj-lname').value.trim();
+    if(!fn||!ln){alert('Customer first and last name are required');return;}
+    const c={id:uid('cli'),fname:fn,lname:ln,
+      phone:document.getElementById('qj-phone').value.trim(),
+      email:document.getElementById('qj-email').value.trim(),
+      address:'',notes:'',createdAt:today()};
+    const cl=DB.clients(); cl.push(c); DB.set('clients',cl);
+    audit('Client Created',`${fn} ${ln}`);
+    clientId=c.id;
+  }else{
+    clientId=document.getElementById('qj-client').value;
+    if(!clientId){alert('Please select a customer');return;}
+  }
+  const p={id:uid('prj'),name:jobName,clientId,
+    status:document.getElementById('qj-status').value,
+    desc:document.getElementById('qj-desc').value.trim(),
+    measurer:'',estimator:'',scheduler:'',measurements:[],createdAt:today()};
+  const projs=DB.projects(); projs.push(p); DB.set('projects',projs);
+  audit('Job Created',jobName);
+  closeModal('m-quick-job');
+  renderPipeline();
 }
 
 function setPipelineView(v){
