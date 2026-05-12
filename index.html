@@ -933,9 +933,20 @@ async function signOut(){
   await _sb.auth.signOut();
 }
 
-async function _checkAllowed(email){
-  const{data,error}=await _sb.from('allowed_users').select('email').eq('email',email).maybeSingle();
-  return !error&&data!==null;
+async function _checkAllowed(rawEmail){
+  const email=rawEmail.trim().toLowerCase();
+  console.log('[auth] checking allowed_users for email:', JSON.stringify(email));
+  const{data,error,status,statusText}=await _sb
+    .from('allowed_users')
+    .select('email')
+    .ilike('email',email)   // case-insensitive match, also catches case mismatches in the table
+    .maybeSingle();
+  console.log('[auth] allowed_users result:', {data,error,status,statusText});
+  if(error){
+    console.error('[auth] query error — likely an RLS policy issue. Make sure allowed_users has a SELECT policy for the "authenticated" role.',error);
+    return false;
+  }
+  return data!==null;
 }
 
 _sb.auth.onAuthStateChange(async(event,session)=>{
@@ -946,6 +957,7 @@ _sb.auth.onAuthStateChange(async(event,session)=>{
   const sidebarEmail=document.getElementById('sidebar-user-email');
 
   if(session?.user){
+    console.log('[auth] signed in, event:', event, '| raw email from Google:', JSON.stringify(session.user.email));
     const allowed=await _checkAllowed(session.user.email);
     if(!allowed){
       _deniedEmail=session.user.email;
