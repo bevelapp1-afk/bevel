@@ -1,1 +1,1 @@
-CREATE TABLE allowed_users (email TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS allowed_users (email TEXT PRIMARY KEY);
